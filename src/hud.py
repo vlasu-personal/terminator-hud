@@ -1,10 +1,24 @@
 import cv2
 import numpy as np
+from dataclasses import dataclass
 
-from PySide6.QtCore import Qt, QRectF
+from PySide6.QtCore import Qt, QRectF, QElapsedTimer, QTimer
 from PySide6.QtGui import QCloseEvent, QColor, QFont, QImage, QPainter
 from PySide6.QtWidgets import QMainWindow, QWidget
 from optical_unit import OpticalUnit
+
+
+@dataclass(slots=True)
+class _TextOverlay:
+    text: str
+    char_interval_ms: int
+    lifetime_ms: int
+    blink_interval_ms: int | None
+    elapsed: QElapsedTimer
+
+    @property
+    def typing_duration_ms(self) -> int:
+        return max(0, len(self.text) - 1) * self.char_interval_ms
 
 
 class Hud(QMainWindow):
@@ -16,6 +30,9 @@ class Hud(QMainWindow):
         self._display = self._Display()
         self.setCentralWidget(self._display)
         self._stopping = False
+
+    def print_text(self, text: str, *, slot: int, char_interval_ms: int = 45, lifetime_ms: int = 3000, blink_interval_ms: int | None = None) -> int | None:
+        return self._display.add_text(text, slot, char_interval_ms, lifetime_ms, blink_interval_ms)
 
     def start_display(self) -> None:
         self._visual_input.on_frame_ready.connect(self._process_frame)
@@ -68,6 +85,28 @@ class Hud(QMainWindow):
             self.setMinimumSize(960, 600)
             self._frame: QImage | None = None
             self._status = "OPTICAL SYSTEM INITIALIZING"
+            self._text_overlays: dict[int, _TextOverlay] = {}
+            self._text_timer = QTimer(self)
+            self._text_timer.setInterval(16)
+            self._text_timer.timeout.connect(self._advance_text)
+
+        def add_text(self, text: str, slot: int, char_interval_ms: int, lifetime_ms: int, blink_interval_ms: int | None) -> None:
+            if slot in self._text_overlays:
+                return None
+            elapsed = QElapsedTimer()
+            elapsed.start()
+            self._text_overlays[slot] = _TextOverlay(text, char_interval_ms, lifetime_ms, blink_interval_ms, elapsed,)
+            self._text_timer.start()
+            self.update()
+
+        def _advance_text(self) -> None:
+            expired_slots = [slot for slot, overlay in self._text_overlays.items() if overlay.elapsed.elapsed() >= overlay.typing_duration_ms + overlay.lifetime_ms]
+            for slot in expired_slots:
+                del self._text_overlays[slot]
+
+            if not self._text_overlays:
+                self._text_timer.stop()
+            self.update()
 
         def set_frame(self, frame: QImage) -> None:
             self._frame = frame
@@ -85,6 +124,7 @@ class Hud(QMainWindow):
 
             frame = self._frame
             if frame is None or frame.isNull():
+                image_rect = QRectF(self.rect())
                 painter.setPen(QColor(255, 255, 255))
                 font = QFont("Consolas")
                 font.setBold(True)
@@ -94,21 +134,68 @@ class Hud(QMainWindow):
                     Qt.AlignmentFlag.AlignCenter,
                     self._status,
                 )
-                return
+            else:
+                scale = min(
+                    self.width() / frame.width(),
+                    self.height() / frame.height(),
+                )
+                image_width = frame.width() * scale
+                image_height = frame.height() * scale
+                image_rect = QRectF(
+                    (self.width() - image_width) / 2,
+                    (self.height() - image_height) / 2,
+                    image_width,
+                    image_height,
+                )
+                painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+                painter.drawImage(image_rect, frame)
 
-            scale = min(
-                self.width() / frame.width(),
-                self.height() / frame.height(),
-            )
-            image_width = frame.width() * scale
-            image_height = frame.height() * scale
-            image_rect = QRectF(
-                (self.width() - image_width) / 2,
-                (self.height() - image_height) / 2,
-                image_width,
-                image_height,
-            )
-            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-            painter.drawImage(image_rect, frame)
+            self._paint_text(painter, image_rect)
+
+        def _paint_text(self, painter: QPainter, image_rect: QRectF) -> None:
+            font = QFont("Consolas")
+            font.setPixelSize(18)
+            font.setBold(True)
+            painter.setFont(font)
+            painter.setPen(QColor(255, 255, 255))
+
+            painter.save()
+            painter.setClipRect(image_rect)
+            cell_width = image_rect.width() / 3
+            cell_height = image_rect.height() / 3
+            margin = min(12, min(cell_width, cell_height) * 0.08)
+            for slot, overlay in self._text_overlays.items():
+                elapsed_ms = overlay.elapsed.elapsed()
+                visible_characters = min(
+                    len(overlay.text),
+                    elapsed_ms // overlay.char_interval_ms + 1,
+                )
+                text = overlay.text[:visible_characters]
+                if (
+                    overlay.blink_interval_ms is not None
+                    and elapsed_ms >= overlay.typing_duration_ms
+                ):
+                    blink_phase = (
+                        (elapsed_ms - overlay.typing_duration_ms)
+                        // overlay.blink_interval_ms
+                    )
+                    if blink_phase % 2:
+                        continue
+
+                row, column = divmod(slot - 1, 3)
+                text_rect = QRectF(
+                    image_rect.left() + column * cell_width + margin,
+                    image_rect.top() + row * cell_height + margin,
+                    cell_width - 2 * margin,
+                    cell_height - 2 * margin,
+                )
+                painter.drawText(
+                    text_rect,
+                    Qt.AlignmentFlag.AlignLeft
+                    | Qt.AlignmentFlag.AlignVCenter
+                    | Qt.TextFlag.TextWordWrap,
+                    text,
+                )
+            painter.restore()
 
 
