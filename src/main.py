@@ -32,6 +32,7 @@ def main() -> int:
     allowed = [1, 2, 4, 6, 7, 9]
     timer = QTimer()
     timer.timeout.connect(lambda: (timer.setInterval(rng.bounded(3000, 6000)), hud.print_text(assembly_6502, slot=allowed[rng.bounded(len(allowed))], char_interval_ms=5, lifetime_ms=2000, blink_interval_ms=50)))
+    timer.timeout.connect(lambda: (timer.setInterval(rng.bounded(2000, 4000)), hud.print_animation(slot=allowed[rng.bounded(len(allowed))])))
     timer.start()
 
     return autonomous_control_loop.exec()

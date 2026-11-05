@@ -2,8 +2,8 @@ import cv2
 import numpy as np
 from dataclasses import dataclass
 
-from PySide6.QtCore import Qt, QRectF, QElapsedTimer, QTimer
-from PySide6.QtGui import QCloseEvent, QColor, QFont, QImage, QPainter
+from PySide6.QtCore import Qt, QLineF, QRectF, QElapsedTimer, QTimer
+from PySide6.QtGui import QCloseEvent, QColor, QFont, QImage, QPainter, QPen
 from PySide6.QtWidgets import QMainWindow, QWidget
 from optical_unit import OpticalUnit
 
@@ -21,6 +21,12 @@ class _TextOverlay:
         return max(0, len(self.text) - 1) * self.char_interval_ms
 
 
+@dataclass(slots=True)
+class _SearchAnimation:
+    lifetime_ms: int
+    elapsed: QElapsedTimer
+
+
 class Hud(QMainWindow):
     def __init__(self, hud_name: str, visual_input: OpticalUnit):
         super().__init__()
@@ -33,6 +39,9 @@ class Hud(QMainWindow):
 
     def print_text(self, text: str, *, slot: int, char_interval_ms: int = 45, lifetime_ms: int = 3000, blink_interval_ms: int | None = None) -> int | None:
         return self._display.add_text(text, slot, char_interval_ms, lifetime_ms, blink_interval_ms)
+
+    def print_animation(self, *, slot: int, lifetime_ms: int = 3000) -> None:
+        self._display.add_animation(slot, lifetime_ms)
 
     def start_display(self) -> None:
         self._visual_input.on_frame_ready.connect(self._process_frame)
@@ -86,26 +95,40 @@ class Hud(QMainWindow):
             self._frame: QImage | None = None
             self._status = "OPTICAL SYSTEM INITIALIZING"
             self._text_overlays: dict[int, _TextOverlay] = {}
-            self._text_timer = QTimer(self)
-            self._text_timer.setInterval(16)
-            self._text_timer.timeout.connect(self._advance_text)
+            self._search_animations: dict[int, _SearchAnimation] = {}
+            self._overlay_timer = QTimer(self)
+            self._overlay_timer.setInterval(16)
+            self._overlay_timer.timeout.connect(self._advance_overlays)
 
         def add_text(self, text: str, slot: int, char_interval_ms: int, lifetime_ms: int, blink_interval_ms: int | None) -> None:
-            if slot in self._text_overlays:
+            if slot in self._text_overlays or slot in self._search_animations:
                 return None
             elapsed = QElapsedTimer()
             elapsed.start()
             self._text_overlays[slot] = _TextOverlay(text, char_interval_ms, lifetime_ms, blink_interval_ms, elapsed,)
-            self._text_timer.start()
+            self._overlay_timer.start()
             self.update()
 
-        def _advance_text(self) -> None:
+        def add_animation(self, slot: int, lifetime_ms: int) -> None:
+            if slot in self._text_overlays or slot in self._search_animations:
+                return
+            elapsed = QElapsedTimer()
+            elapsed.start()
+            self._search_animations[slot] = _SearchAnimation(lifetime_ms, elapsed)
+            self._overlay_timer.start()
+            self.update()
+
+        def _advance_overlays(self) -> None:
             expired_slots = [slot for slot, overlay in self._text_overlays.items() if overlay.elapsed.elapsed() >= overlay.typing_duration_ms + overlay.lifetime_ms]
             for slot in expired_slots:
                 del self._text_overlays[slot]
 
-            if not self._text_overlays:
-                self._text_timer.stop()
+            expired_animations = [slot for slot, animation in self._search_animations.items() if animation.elapsed.elapsed() >= animation.lifetime_ms]
+            for slot in expired_animations:
+                del self._search_animations[slot]
+
+            if not self._text_overlays and not self._search_animations:
+                self._overlay_timer.stop()
             self.update()
 
         def set_frame(self, frame: QImage) -> None:
@@ -149,8 +172,62 @@ class Hud(QMainWindow):
                 )
                 painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
                 painter.drawImage(image_rect, frame)
+                self._paint_text(painter, image_rect)
 
-            self._paint_text(painter, image_rect)
+            self._paint_animations(painter, image_rect)
+
+
+        def _paint_animations(self, painter: QPainter, image_rect: QRectF) -> None:
+            if not self._search_animations:
+                return
+
+            cell_width = image_rect.width() / 3
+            cell_height = image_rect.height() / 3
+            margin = min(12, min(cell_width, cell_height) * 0.08)
+            grid_size = 8
+
+            painter.save()
+            painter.setClipRect(image_rect)
+            for slot, animation in self._search_animations.items():
+                row, column = divmod(slot - 1, 3)
+                slot_rect = QRectF(
+                    image_rect.left() + column * cell_width + margin,
+                    image_rect.top() + row * cell_height + margin,
+                    cell_width - 2 * margin,
+                    cell_height - 2 * margin,
+                )
+                grid_width = slot_rect.width() * 0.8
+                grid_height = slot_rect.height() * 0.8
+                grid_rect = QRectF(
+                    slot_rect.center().x() - grid_width / 2,
+                    slot_rect.center().y() - grid_height / 2,
+                    grid_width,
+                    grid_height,
+                )
+                painter.save()
+                painter.setClipRect(slot_rect)
+                painter.setPen(QPen(QColor(255, 255, 255, 145), 1))
+                for grid_line in range(1, grid_size):
+                    x = grid_rect.left() + grid_rect.width() * grid_line / grid_size
+                    y = grid_rect.top() + grid_rect.height() * grid_line / grid_size
+                    painter.drawLine(QLineF(x, grid_rect.top(), x, grid_rect.bottom()))
+                    painter.drawLine(QLineF(grid_rect.left(), y, grid_rect.right(), y))
+
+                painter.setPen(QPen(QColor(255, 255, 255, 240), 2))
+                painter.drawRect(grid_rect)
+
+                progress = min(
+                    animation.elapsed.elapsed() / max(1, animation.lifetime_ms),
+                    1.0,
+                )
+                search_position = 1 - abs(2 * progress - 1)
+                cross_x = grid_rect.left() + grid_rect.width() * search_position
+                cross_y = grid_rect.top() + grid_rect.height() * search_position
+                painter.setPen(QPen(QColor(255, 255, 255), 3))
+                painter.drawLine(QLineF(cross_x, grid_rect.top(), cross_x, grid_rect.bottom()))
+                painter.drawLine(QLineF(grid_rect.left(), cross_y, grid_rect.right(), cross_y))
+                painter.restore()
+            painter.restore()
 
         def _paint_text(self, painter: QPainter, image_rect: QRectF) -> None:
             font = QFont("Consolas")

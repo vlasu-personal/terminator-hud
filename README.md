@@ -7,6 +7,7 @@ A Desktop camera HUD that mimics famous Terminator franchise visuals using PySid
 - Captures frames from the USB camera
 - Converts the camera image to red-phosphor/ember color palette like in the movies.
 - Prints text into one of nine overlay slots with a timed character sequence, optional blinking, and automatic expiration for added immersion.
+- Runs a XY grid scan animation and automatic expiration.
 
 ## Run
 
