@@ -20,3 +20,4 @@ This project is in early development. Issues and missing feature are expected :)
 - `src/main.py` Main application loop.
 - `src/optical_unit.py` This is captures camera frames, acts as "Terminator visual feed".
 - `src/hud.py` processes camera frames, renders the HUD and decorations.
+- `src/hud_items/` HUD item classes.

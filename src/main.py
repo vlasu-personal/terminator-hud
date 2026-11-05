@@ -3,7 +3,7 @@ import sys
 from PySide6.QtWidgets import QApplication
 from PySide6.QtCore import QTimer, QRandomGenerator
 from optical_unit import OpticalUnit
-from hud import Hud
+from hud import Hud, TextItem, ScanAnimationItem
 
 assembly_6502 = """
 0800:  D8    CLD
@@ -25,14 +25,14 @@ def main() -> int:
     autonomous_control_loop = QApplication(sys.argv)
     hud = Hud('Cyberdyne Systems Model 702, Series 800, Version 2.4', OpticalUnit(0))
     hud.start_display()
-    QTimer.singleShot(500, lambda: hud.print_text('Directive: Find and terminate John Connor', slot=5, char_interval_ms=50, lifetime_ms=60000))
-    QTimer.singleShot(500, lambda: hud.print_text('Mode: Tracking', slot=8, char_interval_ms=100, lifetime_ms=60000, blink_interval_ms=500))
+    QTimer.singleShot(500, lambda: hud.place_item(TextItem('Directive: Find and terminate John Connor', char_interval_ms=50, lifetime_ms=60000), slot=5))
+    QTimer.singleShot(500, lambda: hud.place_item(TextItem('Mode: Tracking', char_interval_ms=100, lifetime_ms=60000, blink_interval_ms=500), slot=8))
 
     rng = QRandomGenerator.global_()
     allowed = [1, 2, 4, 6, 7, 9]
     timer = QTimer()
-    timer.timeout.connect(lambda: (timer.setInterval(rng.bounded(3000, 6000)), hud.print_text(assembly_6502, slot=allowed[rng.bounded(len(allowed))], char_interval_ms=5, lifetime_ms=2000, blink_interval_ms=50)))
-    timer.timeout.connect(lambda: (timer.setInterval(rng.bounded(2000, 4000)), hud.print_animation(slot=allowed[rng.bounded(len(allowed))])))
+    timer.timeout.connect(lambda: (timer.setInterval(rng.bounded(3000, 6000)), hud.place_item(TextItem(assembly_6502, char_interval_ms=5, lifetime_ms=2000, blink_interval_ms=50), slot=allowed[rng.bounded(len(allowed))])))
+    timer.timeout.connect(lambda: (timer.setInterval(rng.bounded(2000, 4000)), hud.place_item(ScanAnimationItem(), slot=allowed[rng.bounded(len(allowed))])))
     timer.start()
 
     return autonomous_control_loop.exec()
