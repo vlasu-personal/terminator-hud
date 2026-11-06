@@ -1,7 +1,7 @@
 import sys
 
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import QTimer, QRandomGenerator
+from PySide6.QtCore import Qt, QTimer, QRandomGenerator
 from optical_unit import OpticalUnit
 from hud import Hud, TextItem, ScanAnimationItem
 
@@ -31,7 +31,7 @@ def main() -> int:
     rng = QRandomGenerator.global_()
     allowed = [1, 2, 4, 6, 7, 9]
     timer = QTimer()
-    timer.timeout.connect(lambda: (timer.setInterval(rng.bounded(3000, 6000)), hud.place_item(TextItem(assembly_6502, char_interval_ms=5, lifetime_ms=2000, blink_interval_ms=50), slot=allowed[rng.bounded(len(allowed))])))
+    timer.timeout.connect(lambda: (timer.setInterval(rng.bounded(3000, 6000)), hud.place_item(TextItem(assembly_6502, char_interval_ms=10, lifetime_ms=2500, blink_interval_ms=50, vertical_alignment=Qt.AlignmentFlag.AlignBottom), slot=allowed[rng.bounded(len(allowed))])))
     timer.timeout.connect(lambda: (timer.setInterval(rng.bounded(2000, 4000)), hud.place_item(ScanAnimationItem(), slot=allowed[rng.bounded(len(allowed))])))
     timer.start()
 

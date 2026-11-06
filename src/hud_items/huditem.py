@@ -18,6 +18,10 @@ class HudItem(ABC):
     def elapsed_ms(self) -> int:
         return self._elapsed.elapsed() if self._started else 0
 
+    @property
+    def is_started(self) -> bool:
+        return self._started
+
     def start(self) -> bool:
         if self._started:
             return False

@@ -5,12 +5,13 @@ from .huditem import HudItem
 
 
 class TextItem(HudItem):
-    def __init__(self, text: str, char_interval_ms: int = 45, lifetime_ms: int = 3000, blink_interval_ms: int | None = None) -> None:
+    def __init__(self, text: str, char_interval_ms: int = 45, lifetime_ms: int = 3000, blink_interval_ms: int | None = None, vertical_alignment: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignVCenter) -> None:
         super().__init__()
         self._text = text
         self._char_interval_ms = char_interval_ms
         self._lifetime_ms = lifetime_ms
         self._blink_interval_ms = blink_interval_ms
+        self._vertical_alignment = vertical_alignment
 
     @property
     def typing_duration_ms(self) -> int:
@@ -33,4 +34,4 @@ class TextItem(HudItem):
         font.setBold(True)
         painter.setFont(font)
         painter.setPen(QColor(255, 255, 255))
-        painter.drawText(rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextWordWrap, text)
+        painter.drawText(rect, Qt.AlignmentFlag.AlignLeft | self._vertical_alignment | Qt.TextFlag.TextWordWrap, text)

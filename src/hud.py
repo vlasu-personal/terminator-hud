@@ -1,5 +1,6 @@
 import cv2
 import numpy as np
+from collections import deque
 
 from PySide6.QtCore import Qt, QRectF, QTimer
 from PySide6.QtGui import QCloseEvent, QColor, QFont, QImage, QPainter
@@ -67,12 +68,15 @@ class Hud(QMainWindow):
         self._display.set_status(message)
 
     class _Display(QWidget):
+        MAX_ITEMS_PER_SLOT = 3
+
         def __init__(self):
             super().__init__()
             self.setMinimumSize(960, 600)
             self._frame: QImage | None = None
             self._status = "OPTICAL SYSTEM INITIALIZING"
             self._items: dict[int, HudItem] = {}
+            self._queued_items: dict[int, deque[HudItem]] = {}
             self._item_timer = QTimer(self)
             self._item_timer.setInterval(16)
             self._item_timer.timeout.connect(self._advance_items)
@@ -80,12 +84,17 @@ class Hud(QMainWindow):
         def add_item(self, item: HudItem, slot: int) -> bool:
             if not 1 <= slot <= 9:
                 raise ValueError("slot must be between 1 and 9")
-            if slot in self._items:
-                return False
-            if not item.start():
+            waiting_items = self._queued_items.get(slot)
+            retained_items = int(slot in self._items) + len(waiting_items or ())
+            if retained_items >= self.MAX_ITEMS_PER_SLOT or item.is_started:
                 return False
 
-            self._items[slot] = item
+            if slot in self._items:
+                self._queued_items.setdefault(slot, deque()).append(item)
+            else:
+                if not item.start():
+                    return False
+                self._items[slot] = item
             self._item_timer.start()
             self.update()
             return True
@@ -94,10 +103,22 @@ class Hud(QMainWindow):
             expired_slots = [slot for slot, item in self._items.items() if item.has_expired()]
             for slot in expired_slots:
                 del self._items[slot]
+                self._promote_next_item(slot)
 
-            if not self._items:
+            if not self._items and not self._queued_items:
                 self._item_timer.stop()
             self.update()
+
+        def _promote_next_item(self, slot: int) -> None:
+            queued_items = self._queued_items.get(slot)
+            while queued_items:
+                item = queued_items.popleft()
+                if item.start():
+                    self._items[slot] = item
+                    break
+
+            if not queued_items:
+                self._queued_items.pop(slot, None)
 
         def set_frame(self, frame: QImage) -> None:
             self._frame = frame
